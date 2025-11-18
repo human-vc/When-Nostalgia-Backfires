@@ -4,28 +4,48 @@ import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 def run_ols_regression(df, control_variables=None, standardize=False, robust_se=True):
+    required_cols = ['delta_nostalgia', 'delta_turnout']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
+
     if control_variables is None:
         X = df[['delta_nostalgia']].copy()
     else:
+        if not isinstance(control_variables, list):
+            control_variables = list(control_variables)
+        missing_controls = [col for col in control_variables if col not in df.columns]
+        if missing_controls:
+            raise ValueError(f"Missing control variables: {missing_controls}")
         X = df[['delta_nostalgia'] + control_variables].copy()
-    
+
+    if X.isnull().any().any():
+        raise ValueError("Feature matrix contains missing values. Please handle NaN values before regression.")
+
     if standardize:
+        std_vals = X.std()
+        if (std_vals == 0).any():
+            zero_std_cols = std_vals[std_vals == 0].index.tolist()
+            raise ValueError(f"Cannot standardize: columns have zero standard deviation: {zero_std_cols}")
         X = (X - X.mean()) / X.std()
-    
+
     X = sm.add_constant(X)
     y = df['delta_turnout'].copy()
-    
+
+    if y.isnull().any():
+        raise ValueError("Target variable 'delta_turnout' contains missing values.")
+
     if robust_se:
         model = sm.OLS(y, X).fit(cov_type='HC3')
     else:
         model = sm.OLS(y, X).fit()
-    
+
     return model
 
 def calculate_vif(X):
     vif_data = pd.DataFrame()
     vif_data["Variable"] = X.columns[1:]
-    vif_data["VIF"] = [variance_inflation_factor(X.values, i+1) for i in range(len(X.columns)-1)]
+    vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(1, len(X.columns))]
     return vif_data
 
 def run_full_robustness_analysis(df):
